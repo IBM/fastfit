@@ -7,7 +7,7 @@ Our package provides a convenient command-line tool `train_fastfit` to train tex
 Before running the training script, ensure you have Python installed along with our package and its dependencies. If you haven't already installed our package, you can do so using pip:
 
 ```bash
-pip install fastfit
+pip install fast-fit
 ```
 
 ### Usage
