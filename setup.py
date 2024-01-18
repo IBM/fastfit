@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
 # Read requirements.txt and use it for the install_requires parameter
-with open("requirements.txt") as f:
+with open("./requirements.txt") as f:
     required = f.read().splitlines()
 
 setup(
-    name="fastfit",
+    name="fast-fit",
     version="0.1.0",
     description="Fast and effective approach for few shot with many classes",
     long_description=open("README.md").read(),
