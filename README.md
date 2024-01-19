@@ -104,3 +104,8 @@ model = FastFit.from_pretrained("fast-fit")
 tokenizer = AutoTokenizer.from_pretrained("roberta-large")
 classifier = pipeline("text-classification", model=model, tokenizer=tokenizer)
 print(classifier("Hello World!"))
+```
+The output should be:
+```bash
+[{'label': 'LABEL_0', 'score': 0.5004885196685791}]
+```
