@@ -525,7 +525,6 @@ class FastFitTrainable(PreTrainedModel):
         doc_input_ids,
         doc_attention_mask,
         labels=None,
-
     ):
         scores = None
         if not self.training:
@@ -841,9 +840,12 @@ class FastFitTrainable(PreTrainedModel):
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
         return inputs, labels
 
+
 class FastFit(FastFitTrainable):
     def forward(self, input_ids, attention_mask, labels=None):
         return {"logits": [super().inference_forward(input_ids, attention_mask)]}
+
+
 # main tests:
 
 if __name__ == "__main__":

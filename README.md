@@ -98,6 +98,7 @@ model.save_pretrained("fast-fit")
 Then you can use the model for inference
 ```python
 from fastfit import FastFit
+from transformers import AutoTokenizer, pipeline
 
 model = FastFit.from_pretrained("fast-fit")
 tokenizer = AutoTokenizer.from_pretrained("roberta-large")
