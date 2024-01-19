@@ -103,4 +103,4 @@ from transformers import AutoTokenizer, pipeline
 model = FastFit.from_pretrained("fast-fit")
 tokenizer = AutoTokenizer.from_pretrained("roberta-large")
 classifier = pipeline("text-classification", model=model, tokenizer=tokenizer)
-print(classifier("hello"))
+print(classifier("Hello World!"))
