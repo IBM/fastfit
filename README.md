@@ -92,4 +92,14 @@ trainer = FastFitTrainer(
 model = trainer.train()
 results = trainer.evaluate()
 test_results = trainer.test()
+
+model.save_pretrained("fast-fit")
 ```
+Then you can use the model for inference
+```python
+from fastfit import FastFit
+
+model = FastFit.from_pretrained("fast-fit")
+tokenizer = AutoTokenizer.from_pretrained("roberta-large")
+classifier = pipeline("text-classification", model=model, tokenizer=tokenizer)
+print(classifier("hello"))

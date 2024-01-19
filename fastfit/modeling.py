@@ -253,7 +253,7 @@ class FastFitConfig(PretrainedConfig):
         return output
 
 
-class FastFit(PreTrainedModel):
+class FastFitTrainable(PreTrainedModel):
     config_class = FastFitConfig
     base_model_prefix = "FastFit"
 
@@ -324,6 +324,12 @@ class FastFit(PreTrainedModel):
 
         if config.sim_factor > 0.0:
             self.sim_criterion = SupConLoss(temperature=0.07)
+
+        if config.all_docs is not None:
+            input_ids, attention_mask = config.all_docs
+            input_ids = torch.LongTensor(input_ids)
+            attention_mask = torch.LongTensor(attention_mask)
+            self.set_documetns((input_ids, attention_mask))
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
@@ -412,7 +418,13 @@ class FastFit(PreTrainedModel):
         return embeddings
 
     def set_documetns(self, all_docs):
-        self.all_docs = all_docs
+        input_ids, attention_mask = all_docs
+        self.config.all_docs = [input_ids.tolist(), attention_mask.tolist()]
+        # Assuming 'all_docs' is your list of torch.LongTensor objects
+        all_docs = [torch.nn.Parameter(doc, requires_grad=False) for doc in all_docs]
+
+        # Now you can create a ParameterList
+        self.all_docs = torch.nn.ParameterList(all_docs)
 
     def inference_forward(self, query_input_ids, query_attention_mask):
         with torch.no_grad():
@@ -513,6 +525,7 @@ class FastFit(PreTrainedModel):
         doc_input_ids,
         doc_attention_mask,
         labels=None,
+
     ):
         scores = None
         if not self.training:
@@ -828,7 +841,10 @@ class FastFit(PreTrainedModel):
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
         return inputs, labels
 
-
+class FastFit(FastFitTrainable):
+    def forward(self, input_ids, attention_mask, labels=None):
+        return {"logits": [super().inference_forward(input_ids, attention_mask)]}
 # main tests:
+
 if __name__ == "__main__":
-    model = FastFit.from_pretrined_encoder("roberta-base")
+    model = FastFitTrainable.from_pretrined_encoder("roberta-base")

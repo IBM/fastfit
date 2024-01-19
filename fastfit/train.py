@@ -32,7 +32,7 @@ from transformers.utils.versions import require_version
 
 from transformers.integrations import INTEGRATION_TO_CALLBACK
 from .modeling import ConfigArguments
-from .modeling import FastFit, FastFitConfig
+from .modeling import FastFitTrainable, FastFitConfig
 
 INTEGRATION_TO_CALLBACK["clearml"] = INTEGRATION_TO_CALLBACK["tensorboard"]
 
@@ -607,7 +607,7 @@ class FastFitTrainer:
                 clf_dim=self.num_labels,
                 **config_kwargs,
             )
-            model = FastFit.from_pretrained(
+            model = FastFitTrainable.from_pretrained(
                 pretrained_model_name_or_path=self.model_args.model_name_or_path,
             )
         else:
@@ -619,7 +619,7 @@ class FastFitTrainer:
                 clf_dim=self.num_labels,
                 **config_kwargs,
             )
-            model = FastFit.from_encoder_pretrained(
+            model = FastFitTrainable.from_encoder_pretrained(
                 encoder_pretrained_model_name_or_path=self.model_args.model_name_or_path,
                 config=config,
             )
