@@ -60,13 +60,13 @@ You can simply run it with your python
 
 ```python
 from datasets import load_dataset
-from fastfit import FastFitTrainer
+from fastfit import FastFitTrainer, sample_dataset
 
 # Load a dataset from the Hugging Face Hub
 dataset = load_dataset("SetFit/sst2")
 
 # Down sample the train data for 10-shot training
-dataset["train"] = dataset["train"].shuffle().select(range(10))
+dataset["train"] = sample_dataset(dataset["train"], label_column="label", num_samples_per_label=10)
 
 trainer = FastFitTrainer(
     model_name_or_path="roberta-large",
@@ -103,9 +103,6 @@ from transformers import AutoTokenizer, pipeline
 model = FastFit.from_pretrained("fast-fit")
 tokenizer = AutoTokenizer.from_pretrained("roberta-large")
 classifier = pipeline("text-classification", model=model, tokenizer=tokenizer)
-print(classifier("Hello World!"))
-```
-The output should be:
-```bash
-[{'label': 'LABEL_0', 'score': 0.5004885196685791}]
+
+print(classifier("I love this package!"))
 ```

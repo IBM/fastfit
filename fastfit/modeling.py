@@ -202,7 +202,7 @@ class FastFitConfig(PretrainedConfig):
         length_norm=False,  # wether to noramlize scores by length
         scores_temp=0.07,
         inference_direction="doc",
-        sim_func_version=2,
+        sim_func_version=1,
         **kwargs,
     ):
         super().__init__(**kwargs)
