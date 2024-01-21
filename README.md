@@ -63,10 +63,11 @@ from datasets import load_dataset
 from fastfit import FastFitTrainer, sample_dataset
 
 # Load a dataset from the Hugging Face Hub
-dataset = load_dataset("SetFit/sst2")
+dataset = load_dataset("mteb/banking77")
+dataset["validation"] = dataset["test"]
 
-# Down sample the train data for 10-shot training
-dataset["train"] = sample_dataset(dataset["train"], label_column="label", num_samples_per_label=10)
+# Down sample the train data for 5-shot training
+dataset["train"] = sample_dataset(dataset["train"], label_column="label", num_samples=5)
 
 trainer = FastFitTrainer(
     model_name_or_path="roberta-large",
