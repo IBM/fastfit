@@ -99,7 +99,7 @@ print(classifier("I love this package!"))
 ```
 
 ## All avialble parameters:
-```bash
+```
 optional arguments:
   -h, --help            show this help message and exit
   --num_repeats NUM_REPEATS
