@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from transformers import (
     AutoModel,
@@ -84,7 +83,7 @@ class SupConLoss(nn.Module):
                 torch.matmul(anchor_feature, contrast_feature.T), self.temperature
             )
         else:
-            anchor_dot_contrast = sim
+            anchor_dot_contrast = sim / self.temperature
 
         # for numerical stability
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
@@ -153,16 +152,14 @@ class ConfigArguments:
     inference_type: Optional[str] = field(
         default="sim", metadata={"help": "The inference type to be used."}
     )
-    sim_rep: Optional[str] = field(
-        default="reg",
-        metadata={"help": "The similarity representation for training and inference."},
+    rep_tokens: Optional[str] = field(
+        default="all",
+        metadata={
+            "help": "The tokens to use for representation when calculating the similarity in training and inference."
+        },
     )
     length_norm: Optional[bool] = field(
         default=False,
-        metadata={"help": "Whether to normalize by length while considering pad"},
-    )
-    sim_func_version: Optional[int] = field(
-        default=2,
         metadata={"help": "Whether to normalize by length while considering pad"},
     )
     mlm_factor: Optional[float] = field(
@@ -181,10 +178,10 @@ class FastFitConfig(PretrainedConfig):
         self,
         all_docs=None,
         num_repeats=1,
-        sim_rep="reg",
+        rep_tokens="all",
         inference_type="sim",
-        clf_level="cls",
-        init_freeze="reg",
+        clf_level="mean_pool",
+        init_freeze="all",
         clf_dim=77,
         proj_dim=128,
         similarity_metric="cosine",
@@ -192,8 +189,8 @@ class FastFitConfig(PretrainedConfig):
         encoding_type="dual",
         clf_query=True,
         clf_doc=False,
-        mask_query=False,
-        mask_doc=False,
+        mask_zeros_in_query=False,
+        mask_zeros_in_doc=True,
         sim_factor=1.0,
         clf_factor=0.1,
         mlm_factor=0.0,
@@ -202,14 +199,13 @@ class FastFitConfig(PretrainedConfig):
         length_norm=False,  # wether to noramlize scores by length
         scores_temp=0.07,
         inference_direction="doc",
-        sim_func_version=1,
         **kwargs,
     ):
         super().__init__(**kwargs)
 
         self.all_docs = all_docs
         self.num_repeats = num_repeats
-        self.sim_rep = sim_rep
+        self.rep_tokens = rep_tokens
         self.clf_level = clf_level
         self.init_freeze = init_freeze
         self.clf_dim = clf_dim
@@ -219,8 +215,8 @@ class FastFitConfig(PretrainedConfig):
         self.encoding_type = encoding_type
         self.clf_query = clf_query if not pretrain_mode else False
         self.clf_doc = clf_doc
-        self.mask_query = mask_query
-        self.mask_doc = mask_doc
+        self.mask_zeros_in_query = mask_zeros_in_query
+        self.mask_zeros_in_doc = mask_zeros_in_doc
         self.sim_factor = sim_factor
         self.clf_factor = clf_factor
         self.mlm_factor = mlm_factor
@@ -229,7 +225,6 @@ class FastFitConfig(PretrainedConfig):
         self.length_norm = length_norm
         self.scores_temp = scores_temp
         self.inference_direction = inference_direction
-        self.sim_func_version = sim_func_version
         self.mlm_prob = mask_prob
         self.mask_prob = mask_prob
 
@@ -291,7 +286,7 @@ class FastFitTrainable(PreTrainedModel):
         self.inner_dim = config.hidden_size
 
         if config.clf_query:
-            if config.clf_level == "cls":
+            if config.clf_level in ["cls", "mean_pool"]:
                 self.clf = nn.Linear(config.hidden_size, config.clf_dim)
 
             elif config.clf_level == "token":
@@ -323,7 +318,7 @@ class FastFitTrainable(PreTrainedModel):
             self.config.clf_query = False
 
         if config.sim_factor > 0.0:
-            self.sim_criterion = SupConLoss(temperature=0.07)
+            self.sim_criterion = SupConLoss(temperature=config.scores_temp)
 
         if config.all_docs is not None:
             input_ids, attention_mask = config.all_docs
@@ -435,48 +430,45 @@ class FastFitTrainable(PreTrainedModel):
             )
 
             if self.config.inference_type == "sim":
-                query_projections = self.project(
-                    query_encodings, keep_dims=self.training
+                query = self.reduce(
+                    query_encodings, query_input_ids, self.config.mask_zeros_in_query
                 )
-                doc_projections = self.project(doc_encodings, keep_dims=self.training)
+                doc = self.reduce(
+                    doc_encodings, doc_input_ids, self.config.mask_zeros_in_doc
+                )
 
                 if self.config.inference_direction == "query":
                     scores = self.tokens_similarity(
-                        query_projections,
+                        query,
+                        doc,
                         query_attention_mask,
-                        doc_projections,
                         doc_attention_mask,
+                        with_lens_norm=False,
                     ).T
                 elif self.config.inference_direction == "doc":
                     scores = self.tokens_similarity(
-                        doc_projections,
+                        doc,
+                        query,
                         doc_attention_mask,
-                        query_projections,
                         query_attention_mask,
+                        with_lens_norm=False,
                     )
                 elif self.config.inference_direction == "both":
                     first = self.tokens_similarity(
-                        query_projections,
+                        query,
+                        doc,
                         query_attention_mask,
-                        doc_projections,
                         doc_attention_mask,
+                        with_lens_norm=False,
                     ).T
                     second = self.tokens_similarity(
-                        doc_projections,
+                        doc,
+                        query,
                         doc_attention_mask,
-                        query_projections,
                         query_attention_mask,
+                        with_lens_norm=False,
                     )
                     scores = (first + second) / 2
-                if self.config.sim_func_version == 1:
-                    scores = (
-                        (
-                            doc_projections
-                            @ query_projections.permute(0, 2, 1).unsqueeze(1)
-                        )
-                        .max(2)[0]
-                        .sum(2)
-                    )
 
             elif self.config.inference_type == "clf":
                 _, scores = self.clf_loss(
@@ -518,6 +510,14 @@ class FastFitTrainable(PreTrainedModel):
             mlm_labels,
         )
 
+    def reduce(self, encodings, input_ids, do_mask_zeros=False):
+        projected = self.project(encodings, keep_dims=self.training)
+
+        if do_mask_zeros:
+            projected = self.mask_zeros(projected, input_ids)
+
+        return self.normalize(projected)
+
     def forward(
         self,
         query_input_ids,
@@ -552,11 +552,16 @@ class FastFitTrainable(PreTrainedModel):
         total_loss = 0.0
 
         if self.config.sim_factor > 0.0:
-            query_projections = self.project(query_encodings, keep_dims=self.training)
-            doc_projections = self.project(doc_encodings, keep_dims=self.training)
+            query = self.reduce(
+                query_encodings, query_input_ids, self.config.mask_zeros_in_query
+            )
+            doc = self.reduce(
+                doc_encodings, doc_input_ids, self.config.mask_zeros_in_doc
+            )
+
             sim_loss = self.sim_loss(
-                query_projections,
-                doc_projections,
+                query,
+                doc,
                 query_attention_mask,
                 doc_attention_mask,
                 labels,
@@ -568,7 +573,7 @@ class FastFitTrainable(PreTrainedModel):
             total_loss += mlm_loss * self.config.mlm_factor
 
         if self.config.clf_factor > 0.0 and not self.config.pretrain_mode:
-            clf_loss = self.clf_loss(query_encodings, labels)
+            clf_loss = self.clf_loss(query_encodings, query_attention_mask, labels)
             total_loss += clf_loss * self.config.clf_factor
 
         return total_loss, scores
@@ -586,30 +591,38 @@ class FastFitTrainable(PreTrainedModel):
         bs = query_projections.size(0) // self.config.num_repeats  # original batch size
         Q, D = query_projections, doc_projections
         if self.config.pretrain_mode:
-            if self.config.sim_rep == "reg":
+            if self.config.rep_tokens == "all":
                 sim_mat = self.token_sim(Q[:bs, :, :], Q[bs:, :, :], bs)
                 a, b = Q[:bs, :1, :], Q[bs:, :1, :]
-            elif self.config.sim_rep == "cls":
+            elif self.config.rep_tokens == "cls":
                 a, b = Q[:bs, :, :], Q[bs:, :, :]
 
         else:
             lbls = Variable(labels.type(torch.DoubleTensor), requires_grad=True)
-            if self.config.sim_rep == "reg":
-                if self.config.sim_func_version == 1:
-                    sim_mat = self.token_sim1(Q, D, self.config.num_repeats * bs)
-                if self.config.sim_func_version == 2:
-                    sim_mat = self.token_sim2(
-                        Q, D, query_attention_mask, doc_attention_mask
-                    )
+            if self.config.rep_tokens == "all":
+                sim_mat = self.query_doc_similarity_matrix(
+                    Q, D, query_attention_mask, doc_attention_mask
+                )
                 a, b = Q[:, :1, :], D[:, :1, :]
-            elif self.config.sim_rep == "cls":
+            elif self.config.rep_tokens == "cls":
                 a, b = Q, D
 
         features = torch.cat((a, b), 1)
         sim_loss = self.sim_criterion(features=features, labels=lbls, sim=sim_mat)
         return sim_loss
 
-    def clf_loss(self, encodings, labels, return_scores=False):
+    def mean_pooling(self, model_output, attention_mask):
+        token_embeddings = model_output[
+            0
+        ]  # First element of model_output contains all token embeddings
+        input_mask_expanded = (
+            attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        )
+        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(
+            input_mask_expanded.sum(1), min=1e-9
+        )
+
+    def clf_loss(self, encodings, attention_mask, labels, return_scores=False):
         if self.config.clf_level == "token":
             x = (encodings.last_hidden_state).permute(0, 2, 1)
             logits = (
@@ -629,10 +642,14 @@ class FastFitTrainable(PreTrainedModel):
             else:
                 cls = encodings.pooler_output
             logits = self.clf(cls)
+        elif self.config.clf_level == "mean_pool":
+            cls = self.mean_pooling(encodings, attention_mask)
+            cls = torch.nn.functional.normalize(cls, p=2, dim=1)
+            logits = self.clf(cls)
         else:
             raise ValueError("Unknown clf level: {}".format(self.config.clf_level))
 
-        clf_scores = logits / self.config.clf_dim  # normalizing for colbert
+        clf_scores = logits / self.config.clf_dim
         clf_loss = self.clf_criterion(clf_scores, labels)
 
         if return_scores:
@@ -687,74 +704,49 @@ class FastFitTrainable(PreTrainedModel):
         return encodings
 
     def project(self, encodings, keep_dims=True):
-        if self.config.sim_rep == "reg":
+        if self.config.rep_tokens == "all":
             encoded = encodings[0]
             if keep_dims:
                 encoded = self.dropout(encoded)
-        elif self.config.sim_rep == "cls":
-            cls = encodings  # TODO: fix this
+        elif self.config.rep_tokens == "cls":
+            cls = encodings.last_hidden_state[:, 0, :]
             if keep_dims:
                 cls = self.batch_norm(cls)
                 cls = self.dropout(cls)
             encoded = cls.unsqueeze(1)
 
-        encoded = self.projection(encoded)
-        encoded = torch.nn.functional.normalize(encoded, p=2, dim=2)
-        return encoded
+        projected = self.projection(encoded)
+        return projected
 
-    def score(self, Q, D):
-        if self.config.similarity_metric == "cosine":
-            return (Q @ D.permute(0, 2, 1)).max(2).values.sum(1)
+    def normalize(self, tensor):
+        return torch.nn.functional.normalize(tensor, p=2, dim=2)
 
-        assert self.config.similarity_metric == "l2"
-        return (
-            (-1.0 * ((Q.unsqueeze(2) - D.unsqueeze(1)) ** 2).sum(-1))
-            .max(-1)
-            .values.sum(-1)
-        )
+    def mask_zeros(self, tensor, input_ids):
+        return tensor * (input_ids != 0).float().unsqueeze(2)
 
-    def mask(self, input_ids):
-        mask = [
-            [(x not in self.skiplist) and (x != 0) for x in d]
-            for d in input_ids.cpu().tolist()
-        ]
-        return mask
+    def query_doc_similarity_matrix(self, Q, D, Q_mask, D_mask, symetric_mode=True):
+        QD = self.tokens_similarity(D, Q, Q_mask, D_mask)
+        QQ = self.tokens_similarity(Q, Q, Q_mask, D_mask)
+        DD = self.tokens_similarity(D, D, Q_mask, D_mask)
 
-    def token_sim1(self, Q_n, D_n, half_bsz):  # if token level in colbert forworad
-        q_tokens = Q_n.shape[1]
-        d_tokens = D_n.shape[1]
-        Q_bsz = torch.cat((half_bsz * [Q_n]))
-        D_bsz = torch.repeat_interleave(D_n, half_bsz, dim=0)
-        colbert_score_bsz_QD = (
-            (Q_bsz @ D_bsz.permute(0, 2, 1)).max(2).values.sum(1)
-        ).view(half_bsz, -1).permute(1, 0) / q_tokens
+        if symetric_mode:
+            DQ = QD.T
+        else:
+            QD = self.tokens_similarity(Q, D, Q_mask, D_mask)
 
-        Q_bsz_2 = torch.repeat_interleave(Q_n, half_bsz, dim=0)
-        colbert_score_bsz_QQ = (
-            (Q_bsz @ Q_bsz_2.permute(0, 2, 1)).max(2).values.sum(1)
-        ).view(half_bsz, -1).permute(1, 0) / q_tokens
+        return torch.cat((torch.cat((QQ, DQ)), torch.cat((QD, DD))), 1)
 
-        D_bsz_1 = torch.cat((half_bsz * [D_n]))
-        colbert_score_bsz_DD = (
-            (D_bsz_1 @ D_bsz.permute(0, 2, 1)).max(2).values.sum(1)
-        ).view(half_bsz, -1).permute(1, 0) / d_tokens
-
-        return (
-            torch.cat(
-                (
-                    torch.cat((colbert_score_bsz_QQ, colbert_score_bsz_QD.T)),
-                    torch.cat((colbert_score_bsz_QD, colbert_score_bsz_DD)),
-                ),
-                1,
-            )
-            / 0.07
-        )  # div temp
-
-    def tokens_similarity(self, B1, B1_mask, B2, B2_mask):
+    def tokens_similarity(
+        self, B1, B2, B1_mask=None, B2_mask=None, with_lens_norm=True
+    ):
         tokens_sim = B1 @ B2.permute(0, 2, 1).unsqueeze(1)
         lens = B2.shape[1]
 
         if self.config.length_norm:
+            if B1_mask is None or B2_mask is None:
+                raise ValueError(
+                    "tokens_similarity has to have values for B1_mask and B2_mask when length_norm=True"
+                )
             B1_mask = B1_mask.type(B1.dtype).to(B1.device)
             B2_mask = B2_mask.type(B2.dtype).to(B2.device)
             tokens_mask = B1_mask.unsqueeze(-1) @ B2_mask.unsqueeze(-1).permute(
@@ -765,36 +757,10 @@ class FastFitTrainable(PreTrainedModel):
 
         scores = tokens_sim.max(2)[0].sum(2)
 
-        normalized_scores = scores / lens
+        if with_lens_norm:
+            scores = scores / lens
 
-        return normalized_scores / self.config.scores_temp
-
-    def token_sim3(self, Q, D, Q_mask, D_mask, symetric_mode=True):
-        # pad to longer sequence then concat
-        max_length = max(Q.shape[1], D.shape[1])
-        Q = F.pad(Q, (0, 0, 0, max_length - Q.shape[1]), "constant", 0)
-        D = F.pad(D, (0, 0, 0, max_length - D.shape[1]), "constant", 0)
-        Q_mask = F.pad(Q_mask, (0, max_length - Q_mask.shape[1]), "constant", 0)
-        D_mask = F.pad(D_mask, (0, max_length - D_mask.shape[1]), "constant", 0)
-        QD = torch.cat([Q, D], dim=0)
-        QD_mask = torch.cat([Q_mask, D_mask], dim=0)
-        sim = self.tokens_similarity(QD, QD_mask, QD, QD_mask)
-
-        if symetric_mode:
-            sim[Q.shape[0] :, : D.shape[0]] = sim[Q.shape[0] :, : D.shape[0]].T
-
-        return sim
-
-    def token_sim2(self, Q, D, Q_mask, D_mask, symetric_mode=True):
-        # pad to longer sequence then concat
-
-        QQ = self.tokens_similarity(Q, Q_mask, Q, Q_mask)
-        QD = self.tokens_similarity(Q, Q_mask, D, D_mask)
-        DD = self.tokens_similarity(D, D_mask, D, D_mask)
-        DQ = QD.T if symetric_mode else self.tokens_similarity(D, D_mask, Q, Q_mask)
-
-        sim = torch.cat((torch.cat((QQ, DQ)), torch.cat((QD, DD))), 1)
-        return sim
+        return scores
 
     def mask_tokens(self, inputs, special_tokens_mask=None):
         """
