@@ -4,6 +4,7 @@ import random
 import sys
 import json
 import math
+import tempfile
 
 from dataclasses import dataclass, field
 from collections import Counter, defaultdict
@@ -21,7 +22,6 @@ from transformers import (
     DataCollatorWithPadding,
     EvalPrediction,
     HfArgumentParser,
-    PretrainedConfig,
     Trainer,
     TrainingArguments,
     default_data_collator,
@@ -328,7 +328,7 @@ class FastFitTrainer:
         return (
             self._dataset is not None
             or self._train_dataset is not None
-            or self._test_datast is not None
+            or self._test_dataset is not None
             or self._validation_dataset is not None
         )
 
@@ -351,9 +351,20 @@ class FastFitTrainer:
                     training_args,
                 ) = parser.parse_args_into_dataclasses()
         else:
-            args_dict["do_train"] = True
-            args_dict["do_eval"] = True
-            args_dict["do_predict"] = True
+            if self._has_train_dataset:
+                args_dict["do_train"] = True
+            else:
+                raise ValueError(
+                    "You must intilize the FastFitTrainer with train_dataset or train_file."
+                )
+            if self._has_validation_dataset:
+                args_dict["do_eval"] = True
+            if self._has_test_dataset:
+                args_dict["do_predict"] = True
+            if "output_dir" not in args_dict:
+                args_dict["save_strategy"] = "no"
+                args_dict["output_dir"] = tempfile.gettempdir()
+                args_dict["overwrite_output_dir"] = True
             if self.has_custom_dataset():
                 args_dict["task_name"] = "custom"
             config_args, model_args, data_args, training_args = parser.parse_dict(
@@ -457,7 +468,7 @@ class FastFitTrainer:
 
             # Get the test dataset: you can provide your own CSV/JSON test file (see below)
             # when you use `do_predict` without specifying a GLUE benchmark task.
-            if self.training_args.do_predict:
+            if self.training_args.do_predict and self.is_command_line_mode:
                 if self.data_args.test_file is not None:
                     train_extension = self.data_args.train_file.split(".")[-1]
                     test_extension = self.data_args.test_file.split(".")[-1]
@@ -663,28 +674,7 @@ class FastFitTrainer:
 
         # Some models have set the order of the labels to use, so let's make sure we do use it.
         self.label_to_id = None
-        if (
-            self.model.config.label2id
-            != PretrainedConfig(num_labels=self.num_labels).label2id
-            and self.data_args.task_name is not None
-            and not self.is_regression
-        ):
-            # Some have all caps in their config, some don't.
-            self.label_name_to_id = {
-                k.lower(): v for k, v in self.model.config.label2id.items()
-            }
-            if list(sorted(self.label_name_to_id.keys())) == list(sorted(self.labels)):
-                self.label_to_id = {
-                    i: int(self.label_name_to_id[self.labels[i]])
-                    for i in range(self.num_labels)
-                }
-            else:
-                logger.warning(
-                    "Your model seems to have been trained with labels, but they don't match the dataset: ",
-                    f"model labels: {list(sorted(self.label_name_to_id.keys()))}, dataset labels: {list(sorted(self.labels))}."
-                    "\nIgnoring the model labels as a result.",
-                )
-        elif self.data_args.task_name is None and not self.is_regression:
+        if not self.is_regression:
             self.label_to_id = {v: i for i, v in enumerate(self.labels)}
 
         if self.label_to_id is not None:
@@ -936,12 +926,28 @@ class FastFitTrainer:
         train_dataset=None,
         validation_dataset=None,
         test_dataset=None,
+        is_command_line_mode=False,
         **kwargs,
     ):
+        self._has_train_dataset = train_dataset is not None or "train_file" in kwargs
+        if dataset is not None:
+            self._has_train_dataset = "train" in dataset
+
+        self._has_validation_dataset = (
+            validation_dataset is not None or "validation_file" in kwargs
+        )
+        if dataset is not None:
+            self._has_validation_dataset = "validation" in dataset
+
+        self._has_test_dataset = test_dataset is not None or "test_file" in kwargs
+        if dataset is not None:
+            self._has_test_dataset = "test" in dataset
+
         self._dataset = dataset
         self._train_dataset = train_dataset
         self._validation_dataset = validation_dataset
         self._test_dataset = test_dataset
+        self.is_command_line_mode = is_command_line_mode
         self.set_args(kwargs)
         self.set_logger()
         self.set_last_checkpoint()
@@ -1049,20 +1055,15 @@ class FastFitTrainer:
     def push_to_hub(self):
         kwargs = {
             "finetuned_from": self.model_args.model_name_or_path,
-            "tasks": "text-classification",
+            "tasks": self.data_args.task_name,
         }
-        if self.data_args.task_name is not None:
-            kwargs["language"] = "en"
-            kwargs["dataset_tags"] = "glue"
-            kwargs["dataset_args"] = self.data_args.task_name
-            kwargs["dataset"] = f"GLUE {self.data_args.task_name.upper()}"
 
         if self.training_args.push_to_hub:
             self.trainer.push_to_hub(**kwargs)
 
 
 def main():
-    trainer = FastFitTrainer()
+    trainer = FastFitTrainer(is_command_line_mode=True)
     trainer.train()
     trainer.evaluate()
     trainer.test()

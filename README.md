@@ -61,12 +61,11 @@ dataset = load_dataset("mteb/banking77")
 dataset["validation"] = dataset["test"]
 
 # Down sample the train data for 5-shot training
-dataset["train"] = sample_dataset(dataset["train"], label_column="label", num_samples_per_label=5)
+dataset["train"] = sample_dataset(dataset["train"], label_column="label_text", num_samples_per_label=5)
 
 trainer = FastFitTrainer(
     model_name_or_path="roberta-base",
-    overwrite_output_dir=True,
-    label_column_name="label",
+    label_column_name="label_text",
     text_column_name="text",
     num_train_epochs=40,
     per_device_train_batch_size=32,
@@ -82,8 +81,13 @@ trainer = FastFitTrainer(
 
 model = trainer.train()
 results = trainer.evaluate()
-test_results = trainer.test()
 
+print("Accuracy: {:.1f}".format(results["eval_accuracy"] * 100))
+```
+Output: `Accuracy: 82.4`
+
+Then the model can be saved:
+```python
 model.save_pretrained("fast-fit")
 ```
 Then you can use the model for inference
@@ -185,4 +189,4 @@ print(classifier("I love this package!"))
 - `--no_logging_nan_inf_filter`: Filter nan and inf losses for logging. (default: False)
 - `--save_strategy {no,steps,epoch}`: The checkpoint save strategy to use. (default: steps)
 - `--save_steps SAVE_STEPS`: Save checkpoint every X updates steps. (default: 500)
-- `--save_total_limit SAVE_TOTAL_LIMIT
+
