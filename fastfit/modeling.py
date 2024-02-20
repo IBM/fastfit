@@ -168,6 +168,17 @@ class ConfigArguments:
     mask_prob: Optional[float] = field(
         default=0.0, metadata={"help": "The probability of masking a token."}
     )
+    clf_level: Optional[str] = field(
+        default="mean_pool", metadata={"help": "The level in which to apply classifier loss on from [mean_pool, cls, token]"}
+    )
+    mask_zeros_in_query: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to put mask token on every zero token in every query."},
+    )
+    mask_zeros_in_doc: Optional[bool] = field(
+        default=True,
+        metadata={"help": "Whether to put mask token on every zero token in every doc."},
+    )
 
 
 class FastFitConfig(PretrainedConfig):
@@ -725,14 +736,14 @@ class FastFitTrainable(PreTrainedModel):
         return tensor * (input_ids != 0).float().unsqueeze(2)
 
     def query_doc_similarity_matrix(self, Q, D, Q_mask, D_mask, symetric_mode=True):
-        QD = self.tokens_similarity(D, Q, Q_mask, D_mask)
-        QQ = self.tokens_similarity(Q, Q, Q_mask, D_mask)
-        DD = self.tokens_similarity(D, D, Q_mask, D_mask)
+        QD = self.tokens_similarity(D, Q, D_mask, Q_mask)
+        QQ = self.tokens_similarity(Q, Q, Q_mask, Q_mask)
+        DD = self.tokens_similarity(D, D, D_mask, D_mask)
 
         if symetric_mode:
             DQ = QD.T
         else:
-            QD = self.tokens_similarity(Q, D, Q_mask, D_mask)
+            DQ = self.tokens_similarity(Q, D, Q_mask, D_mask)
 
         return torch.cat((torch.cat((QQ, DQ)), torch.cat((QD, DD))), 1)
 
