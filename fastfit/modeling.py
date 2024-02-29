@@ -159,7 +159,7 @@ class ConfigArguments:
         },
     )
     length_norm: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={"help": "Whether to normalize by length while considering pad"},
     )
     mlm_factor: Optional[float] = field(
@@ -169,15 +169,19 @@ class ConfigArguments:
         default=0.0, metadata={"help": "The probability of masking a token."}
     )
     clf_level: Optional[str] = field(
-        default="mean_pool", metadata={"help": "The level in which to apply classifier loss on from [mean_pool, cls, token]"}
+        default="cls", metadata={"help": "The level in which to apply classifier loss on from [mean_pool, cls, token]"}
     )
     mask_zeros_in_query: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to put mask token on every zero token in every query."},
     )
     mask_zeros_in_doc: Optional[bool] = field(
-        default=True,
+        default=False,
         metadata={"help": "Whether to put mask token on every zero token in every doc."},
+    )
+    symetric_mode: Optional[bool] = field(
+        default=True,
+        metadata={"help": "Whether to compare the doc and query in a symetric mode"},
     )
 
 
@@ -191,7 +195,7 @@ class FastFitConfig(PretrainedConfig):
         num_repeats=1,
         rep_tokens="all",
         inference_type="sim",
-        clf_level="mean_pool",
+        clf_level="cls",
         init_freeze="all",
         clf_dim=77,
         proj_dim=128,
@@ -201,15 +205,16 @@ class FastFitConfig(PretrainedConfig):
         clf_query=True,
         clf_doc=False,
         mask_zeros_in_query=False,
-        mask_zeros_in_doc=True,
+        mask_zeros_in_doc=False,
         sim_factor=1.0,
         clf_factor=0.1,
         mlm_factor=0.0,
         mask_prob=0.15,
         pretrain_mode=False,
-        length_norm=False,  # wether to noramlize scores by length
+        length_norm=True,  # wether to noramlize scores by length
         scores_temp=0.07,
         inference_direction="doc",
+        symetric_mode=True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -238,6 +243,7 @@ class FastFitConfig(PretrainedConfig):
         self.inference_direction = inference_direction
         self.mlm_prob = mask_prob
         self.mask_prob = mask_prob
+        self.symetric_mode = symetric_mode
 
         assert inference_direction in ["query", "doc", "both"]
         assert "encoder" in kwargs, "Config has to be initialized with encoder config"
@@ -612,7 +618,8 @@ class FastFitTrainable(PreTrainedModel):
             lbls = Variable(labels.type(torch.DoubleTensor), requires_grad=True)
             if self.config.rep_tokens == "all":
                 sim_mat = self.query_doc_similarity_matrix(
-                    Q, D, query_attention_mask, doc_attention_mask
+                    Q, D, query_attention_mask, doc_attention_mask,
+                    symetric_mode=self.config.symetric_mode,
                 )
                 a, b = Q[:, :1, :], D[:, :1, :]
             elif self.config.rep_tokens == "cls":
