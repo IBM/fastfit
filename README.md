@@ -1,3 +1,6 @@
+
+![fastfit_banner_white](https://github.com/IBM/fastfit/assets/23455264/a4de0a5e-b43a-462b-b1f2-9509ec873e76)
+
 ## Running the Training Script
 
 Our package provides a convenient command-line tool `train_fastfit` to train text classification models. This tool comes with a variety of configurable parameters to customize your training process.
