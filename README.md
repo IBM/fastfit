@@ -1,4 +1,3 @@
-
 ![fastfit_banner_white](https://github.com/IBM/fastfit/assets/23455264/a4de0a5e-b43a-462b-b1f2-9509ec873e76)
 
 FastFit, a method, and a Python package design to provide fast and accurate few-shot classification, especially for scenarios with many semantically similar classes. FastFit utilizes a novel approach integrating batch contrastive learning and token-level similarity score.  Compared to existing few-shot learning packages, such as SetFit, Transformers, or few-shot prompting of large language models via API calls, FastFit significantly improves multi-class classification performance in speed and accuracy across FewMany, our newly curated English benchmark, and Multilingual datasets. FastFit demonstrates a 3-20x improvement in training speed, completing training in just a few seconds.
@@ -62,7 +61,7 @@ from datasets import load_dataset
 from fastfit import FastFitTrainer, sample_dataset
 
 # Load a dataset from the Hugging Face Hub
-dataset = load_dataset("mteb/banking77")
+dataset = load_dataset("FastFit/banking_77")
 dataset["validation"] = dataset["test"]
 
 # Down sample the train data for 5-shot training
@@ -70,7 +69,7 @@ dataset["train"] = sample_dataset(dataset["train"], label_column="label_text", n
 
 trainer = FastFitTrainer(
     model_name_or_path="roberta-base",
-    label_column_name="label_text",
+    label_column_name="label",
     text_column_name="text",
     num_train_epochs=40,
     per_device_train_batch_size=32,
