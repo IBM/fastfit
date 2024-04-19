@@ -65,7 +65,7 @@ dataset = load_dataset("FastFit/banking_77")
 dataset["validation"] = dataset["test"]
 
 # Down sample the train data for 5-shot training
-dataset["train"] = sample_dataset(dataset["train"], label_column="label_text", num_samples_per_label=5)
+dataset["train"] = sample_dataset(dataset["train"], label_column="label", num_samples_per_label=5)
 
 trainer = FastFitTrainer(
     model_name_or_path="roberta-base",
