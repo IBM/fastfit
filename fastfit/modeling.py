@@ -341,7 +341,7 @@ class FastFitTrainable(PreTrainedModel):
             input_ids, attention_mask = config.all_docs
             input_ids = torch.LongTensor(input_ids)
             attention_mask = torch.LongTensor(attention_mask)
-            self.set_documetns((input_ids, attention_mask))
+            self.set_documents((input_ids, attention_mask))
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
@@ -429,7 +429,7 @@ class FastFitTrainable(PreTrainedModel):
         self.config.encoder.vocab_size = embeddings.num_embeddings
         return embeddings
 
-    def set_documetns(self, all_docs):
+    def set_documents(self, all_docs):
         input_ids, attention_mask = all_docs
         self.config.all_docs = [input_ids.tolist(), attention_mask.tolist()]
         # Assuming 'all_docs' is your list of torch.LongTensor objects
