@@ -751,7 +751,7 @@ class FastFitTrainer:
             ] = self.tokenizer.mask_token_id
             tokenized_labels["attention_mask"][:, :] = 1
 
-        self.model.set_documetns(
+        self.model.set_documents(
             (tokenized_labels["input_ids"], tokenized_labels["attention_mask"])
         )
 
