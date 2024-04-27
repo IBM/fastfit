@@ -496,6 +496,9 @@ class FastFitTrainable(PreTrainedModel):
                     return_scores=True,
                 )
 
+        # Flatten scores with batch size 1 in order for transformers pipeline tok_k to work
+        if scores.shape[0] == 1:
+            return scores.flatten()
         return scores
 
     def prepare_inputs(
