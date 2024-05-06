@@ -14,6 +14,7 @@ from transformers import (
     PreTrainedModel,
     AutoModelForMaskedLM,
 )
+from transformers.modeling_outputs import SequenceClassifierOutput
 
 from transformers.configuration_utils import PretrainedConfig
 from transformers.utils import logging
@@ -502,9 +503,6 @@ class FastFitTrainable(PreTrainedModel):
                     query_attention_mask,
                 )
 
-        # Flatten scores with batch size 1 in order for transformers pipeline tok_k to work
-        if scores.shape[0] == 1:
-            return scores.flatten()
         return scores
 
     def prepare_inputs(
@@ -548,13 +546,14 @@ class FastFitTrainable(PreTrainedModel):
         self,
         query_input_ids,
         query_attention_mask,
-        doc_input_ids,
-        doc_attention_mask,
+        doc_input_ids=None,
+        doc_attention_mask=None,
         labels=None,
     ):
-        scores = None
         if not self.training:
-            scores = self.inference_forward(query_input_ids, query_attention_mask)
+            return SequenceClassifierOutput(
+                logits=self.inference_forward(query_input_ids, query_attention_mask),
+            )
 
         (
             query_input_ids,
@@ -602,7 +601,10 @@ class FastFitTrainable(PreTrainedModel):
             clf_loss = self.clf_loss(query_encodings, query_attention_mask, labels)
             total_loss += clf_loss * self.config.clf_factor
 
-        return total_loss, scores
+        return SequenceClassifierOutput(
+            loss=total_loss,
+            logits=None,
+        )
 
     def sim_loss(
         self,
@@ -835,7 +837,7 @@ class FastFitTrainable(PreTrainedModel):
 
 class FastFit(FastFitTrainable):
     def forward(self, input_ids, attention_mask, labels=None):
-        return {"logits": [super().inference_forward(input_ids, attention_mask)]}
+        return super().forward(input_ids, attention_mask, labels=None)
 
 
 # main tests:
