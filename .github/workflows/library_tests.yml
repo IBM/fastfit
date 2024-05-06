@@ -1,0 +1,31 @@
+name: Test Library Code
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  run-full-tests-suit:
+
+    runs-on: ubuntu-latest
+    env:
+      OS: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.8'
+        cache: 'pip' # caching pip dependencies
+    - run: pip install -r requirements.txt
+    - run: pip install -e .
+    - run: pip install coverage[toml]
+
+    - name: Run Tests
+      run:  coverage run --omit=*/preparation -m unittest discover -s tests -p "test_*.py"
+
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v2

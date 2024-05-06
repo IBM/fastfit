@@ -5,6 +5,7 @@ import sys
 import json
 import math
 import tempfile
+import uuid
 
 from dataclasses import dataclass, field
 from collections import Counter, defaultdict
@@ -875,7 +876,7 @@ class FastFitTrainer:
                 )
 
     def set_trainer(self):
-        metric = load_metric(self.data_args.metric_name)
+        metric = load_metric(self.data_args.metric_name, experiment_id=uuid.uuid4())
 
         # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
         # predictions and label_ids field) and has to return a dictionary string to float.
