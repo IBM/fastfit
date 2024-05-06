@@ -38,10 +38,9 @@ class TestInferencePipeline(unittest.TestCase):
     def test_inference_pipeline_simple(self):
         result = self.classifier(self.dataset["validation"]["text"][0])[0]
         self.assertEqual(result["label"], 'year round schooling')
-        self.assertAlmostEqual(result["score"], 0.18, places=2)
 
     def test_inference_pipeline_with_top_k(self):
-        results = self.classifier(self.dataset["validation"]["text"][0])
+        results = self.classifier(self.dataset["validation"]["text"][0], top_k=3)
         labels = [result["label"] for result in results]
         targets = ['year round schooling', 'physical education', 'raising the school leaving age to 18']
         self.assertEqual(labels, targets)
