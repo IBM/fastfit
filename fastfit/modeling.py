@@ -550,10 +550,9 @@ class FastFitTrainable(PreTrainedModel):
         doc_attention_mask=None,
         labels=None,
     ):
+        scores = None
         if not self.training:
-            return SequenceClassifierOutput(
-                logits=self.inference_forward(query_input_ids, query_attention_mask),
-            )
+            scores = self.inference_forward(query_input_ids, query_attention_mask)
 
         (
             query_input_ids,
@@ -603,7 +602,7 @@ class FastFitTrainable(PreTrainedModel):
 
         return SequenceClassifierOutput(
             loss=total_loss,
-            logits=None,
+            logits=scores,
         )
 
     def sim_loss(
@@ -837,7 +836,9 @@ class FastFitTrainable(PreTrainedModel):
 
 class FastFit(FastFitTrainable):
     def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(input_ids, attention_mask, labels=None)
+        return SequenceClassifierOutput(
+            logits=self.inference_forward(input_ids, attention_mask),
+        )
 
 
 # main tests:

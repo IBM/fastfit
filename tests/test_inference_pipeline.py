@@ -42,7 +42,7 @@ class TestInferencePipeline(unittest.TestCase):
 
     def test_inference_pipeline_with_top_k(self):
         results = self.classifier(self.dataset["validation"]["text"][0])
-        labels = [result["lable"] for result in results]
+        labels = [result["label"] for result in results]
         targets = ['year round schooling', 'physical education', 'raising the school leaving age to 18']
         self.assertEqual(labels, targets)
 
