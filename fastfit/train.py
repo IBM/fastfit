@@ -5,6 +5,7 @@ import sys
 import json
 import math
 import tempfile
+import uuid
 
 from dataclasses import dataclass, field
 from collections import Counter, defaultdict
@@ -32,7 +33,7 @@ from transformers.utils.versions import require_version
 
 from transformers.integrations import INTEGRATION_TO_CALLBACK
 from .modeling import ConfigArguments
-from .modeling import FastFitTrainable, FastFitConfig
+from .modeling import FastFitTrainable, FastFit, FastFitConfig
 
 INTEGRATION_TO_CALLBACK["clearml"] = INTEGRATION_TO_CALLBACK["tensorboard"]
 
@@ -875,7 +876,7 @@ class FastFitTrainer:
                 )
 
     def set_trainer(self):
-        metric = load_metric(self.data_args.metric_name)
+        metric = load_metric(self.data_args.metric_name, experiment_id=uuid.uuid4())
 
         # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
         # predictions and label_ids field) and has to return a dictionary string to float.
@@ -957,6 +958,12 @@ class FastFitTrainer:
         self.set_model()
         self.preprocess_data()
         self.set_trainer()
+
+    def export_model(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.model.save_pretrained(temp_dir)
+            model = FastFit.from_pretrained(temp_dir)
+        return model
 
     def train(self):
         # Training

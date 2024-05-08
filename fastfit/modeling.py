@@ -14,6 +14,7 @@ from transformers import (
     PreTrainedModel,
     AutoModelForMaskedLM,
 )
+from transformers.modeling_outputs import SequenceClassifierOutput
 
 from transformers.configuration_utils import PretrainedConfig
 from transformers.utils import logging
@@ -152,6 +153,9 @@ class ConfigArguments:
     inference_type: Optional[str] = field(
         default="sim", metadata={"help": "The inference type to be used."}
     )
+    inference_direction: Optional[str] = field(
+        default="doc", metadata={"help": "The inference direction to be used from doc/query/both."}
+    )
     rep_tokens: Optional[str] = field(
         default="all",
         metadata={
@@ -161,6 +165,10 @@ class ConfigArguments:
     length_norm: Optional[bool] = field(
         default=True,
         metadata={"help": "Whether to normalize by length while considering pad"},
+    )
+    length_norm_at_inference: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to normalize by length at inference"},
     )
     mlm_factor: Optional[float] = field(
         default=0.0, metadata={"help": "The factor to scale the MLM loss."}
@@ -215,6 +223,7 @@ class FastFitConfig(PretrainedConfig):
         scores_temp=0.07,
         inference_direction="doc",
         symetric_mode=True,
+        length_norm_at_inference=False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -244,6 +253,7 @@ class FastFitConfig(PretrainedConfig):
         self.mlm_prob = mask_prob
         self.mask_prob = mask_prob
         self.symetric_mode = symetric_mode
+        self.length_norm_at_inference = length_norm_at_inference
 
         assert inference_direction in ["query", "doc", "both"]
         assert "encoder" in kwargs, "Config has to be initialized with encoder config"
@@ -460,7 +470,7 @@ class FastFitTrainable(PreTrainedModel):
                         doc,
                         query_attention_mask,
                         doc_attention_mask,
-                        with_lens_norm=False,
+                        with_lens_norm=self.config.length_norm_at_inference,
                     ).T
                 elif self.config.inference_direction == "doc":
                     scores = self.tokens_similarity(
@@ -468,7 +478,7 @@ class FastFitTrainable(PreTrainedModel):
                         query,
                         doc_attention_mask,
                         query_attention_mask,
-                        with_lens_norm=False,
+                        with_lens_norm=self.config.length_norm_at_inference,
                     )
                 elif self.config.inference_direction == "both":
                     first = self.tokens_similarity(
@@ -476,24 +486,21 @@ class FastFitTrainable(PreTrainedModel):
                         doc,
                         query_attention_mask,
                         doc_attention_mask,
-                        with_lens_norm=False,
+                        with_lens_norm=self.config.length_norm_at_inference,
                     ).T
                     second = self.tokens_similarity(
                         doc,
                         query,
                         doc_attention_mask,
                         query_attention_mask,
-                        with_lens_norm=False,
+                        with_lens_norm=self.config.length_norm_at_inference,
                     )
                     scores = (first + second) / 2
 
             elif self.config.inference_type == "clf":
-                _, scores = self.clf_loss(
+                scores = self.clf_loss(
                     query_encodings,
-                    doc_encodings,
                     query_attention_mask,
-                    doc_attention_mask,
-                    return_scores=True,
                 )
 
         return scores
@@ -539,8 +546,8 @@ class FastFitTrainable(PreTrainedModel):
         self,
         query_input_ids,
         query_attention_mask,
-        doc_input_ids,
-        doc_attention_mask,
+        doc_input_ids=None,
+        doc_attention_mask=None,
         labels=None,
     ):
         scores = None
@@ -593,7 +600,10 @@ class FastFitTrainable(PreTrainedModel):
             clf_loss = self.clf_loss(query_encodings, query_attention_mask, labels)
             total_loss += clf_loss * self.config.clf_factor
 
-        return total_loss, scores
+        return SequenceClassifierOutput(
+            loss=total_loss,
+            logits=scores,
+        )
 
     def sim_loss(
         self,
@@ -640,7 +650,7 @@ class FastFitTrainable(PreTrainedModel):
             input_mask_expanded.sum(1), min=1e-9
         )
 
-    def clf_loss(self, encodings, attention_mask, labels, return_scores=False):
+    def clf_loss(self, encodings, attention_mask, labels=None):
         if self.config.clf_level == "token":
             x = (encodings.last_hidden_state).permute(0, 2, 1)
             logits = (
@@ -668,12 +678,11 @@ class FastFitTrainable(PreTrainedModel):
             raise ValueError("Unknown clf level: {}".format(self.config.clf_level))
 
         clf_scores = logits / self.config.clf_dim
-        clf_loss = self.clf_criterion(clf_scores, labels)
 
-        if return_scores:
-            return clf_loss, clf_scores
+        if labels is None:
+            return clf_scores
 
-        return clf_loss
+        return self.clf_criterion(clf_scores, labels)
 
     def mlm_loss(self, encodings, mlm_lables):
         sequence_output = encodings[0]
@@ -827,7 +836,9 @@ class FastFitTrainable(PreTrainedModel):
 
 class FastFit(FastFitTrainable):
     def forward(self, input_ids, attention_mask, labels=None):
-        return {"logits": [super().inference_forward(input_ids, attention_mask)]}
+        return SequenceClassifierOutput(
+            logits=self.inference_forward(input_ids, attention_mask),
+        )
 
 
 # main tests:
