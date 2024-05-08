@@ -137,6 +137,7 @@ data/
 *.out
 tmp/
 
+.vscode
 all_results.csv
 experiments/raft/all_results.csv
 experiments/optimization_params2/all_results.csv
