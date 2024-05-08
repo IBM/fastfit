@@ -24,7 +24,7 @@ Here's an example of how to use the `run_train` command with specific settings:
 
 ```bash
 train_fastfit \
-    --model_name_or_path "roberta-base" \
+    --model_name_or_path "sentence-transformers/paraphrase-mpnet-base-v2" \
     --train_file $TRAIN_FILE \
     --validation_file $VALIDATION_FILE \
     --output_dir ./tmp/try \
@@ -68,7 +68,7 @@ dataset["validation"] = dataset["test"]
 dataset["train"] = sample_dataset(dataset["train"], label_column="label", num_samples_per_label=5)
 
 trainer = FastFitTrainer(
-    model_name_or_path="roberta-base",
+    model_name_or_path="sentence-transformers/paraphrase-mpnet-base-v2",
     label_column_name="label",
     text_column_name="text",
     num_train_epochs=40,
@@ -88,7 +88,6 @@ results = trainer.evaluate()
 
 print("Accuracy: {:.1f}".format(results["eval_accuracy"] * 100))
 ```
-Output: `Accuracy: 82.4`
 
 Then the model can be saved:
 ```python
@@ -100,7 +99,7 @@ from fastfit import FastFit
 from transformers import AutoTokenizer, pipeline
 
 model = FastFit.from_pretrained("fast-fit")
-tokenizer = AutoTokenizer.from_pretrained("roberta-large")
+tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/paraphrase-mpnet-base-v2")
 classifier = pipeline("text-classification", model=model, tokenizer=tokenizer)
 
 print(classifier("I love this package!"))
