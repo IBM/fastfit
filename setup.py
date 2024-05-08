@@ -6,7 +6,7 @@ with open("./requirements.txt") as f:
 
 setup(
     name="fast-fit",
-    version="1.2.0",
+    version="1.2.1",
     description="Fast and effective approach for few shot with many classes",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
