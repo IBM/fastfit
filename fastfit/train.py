@@ -855,8 +855,9 @@ class FastFitTrainer:
             or self.data_args.task_name is not None
             or self.data_args.test_file is not None
         ):
-            if "test" not in raw_datasets and "test_matched" not in raw_datasets:
-                raise ValueError("--do_predict requires a test dataset")
+            if self.training_args.do_predict:
+                if "test" not in raw_datasets and "test_matched" not in raw_datasets:
+                    raise ValueError("--do_predict requires a test dataset")
             self.predict_dataset = raw_datasets[
                 "test_matched" if self.data_args.task_name == "mnli" else "test"
             ]
