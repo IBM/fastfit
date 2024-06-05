@@ -850,12 +850,8 @@ class FastFitTrainer:
                 self.eval_dataset = self.eval_dataset.select(range(max_eval_samples))
             # create a eval dataset for inference that contain every text with every possible label
 
-        if (
-            self.training_args.do_predict
-            or self.data_args.task_name is not None
-            or self.data_args.test_file is not None
-        ):
-            if "test" not in raw_datasets and "test_matched" not in raw_datasets:
+        if self.training_args.do_predict:
+            if not self._has_test_dataset:
                 raise ValueError("--do_predict requires a test dataset")
             self.predict_dataset = raw_datasets[
                 "test_matched" if self.data_args.task_name == "mnli" else "test"
