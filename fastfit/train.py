@@ -991,7 +991,7 @@ class FastFitTrainer:
         if self.training_args.do_train:
             train_result = self.trainer.train(
                 resume_from_checkpoint=self.checkpoint,
-                ignore_keys_for_eval={"doc_input_ids", "doc_attention_mask", "labels"},
+                ignore_keys_for_eval=list({"doc_input_ids", "doc_attention_mask", "labels"}),
             )
             metrics = train_result.metrics
             max_train_samples = (
