@@ -623,6 +623,7 @@ class FastFitTrainer:
         else:
             config = AutoConfig.from_pretrained(
                 pretrained_model_name_or_path=self.model_args.model_name_or_path,
+                trust_remote_code=True,
             )
             config = FastFitConfig.from_encoder_config(
                 config,
