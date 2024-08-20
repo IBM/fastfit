@@ -835,7 +835,7 @@ class FastFitTrainable(PreTrainedModel):
 
 
 class FastFit(FastFitTrainable):
-    def forward(self, input_ids, attention_mask, labels=None):
+    def forward(self, input_ids, attention_mask, labels=None, **kwargs):
         return SequenceClassifierOutput(
             logits=self.inference_forward(input_ids, attention_mask),
         )
