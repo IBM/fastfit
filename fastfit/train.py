@@ -14,7 +14,8 @@ from typing import Optional
 import torch
 import datasets
 import numpy as np
-from datasets import load_dataset, load_metric
+from datasets import load_dataset
+from evaluate import load
 
 import transformers
 from transformers import (
@@ -622,6 +623,7 @@ class FastFitTrainer:
         else:
             config = AutoConfig.from_pretrained(
                 pretrained_model_name_or_path=self.model_args.model_name_or_path,
+                trust_remote_code=True,
             )
             config = FastFitConfig.from_encoder_config(
                 config,
@@ -872,7 +874,21 @@ class FastFitTrainer:
                 )
 
     def set_trainer(self):
-        metric = load_metric(self.data_args.metric_name, experiment_id=uuid.uuid4())
+
+        if type(self.data_args.metric_name) == str: # single metric name
+            metrics = [load(self.data_args.metric_name, experiment_id=uuid.uuid4())]
+        elif type(self.data_args.metric_name) == list: # compute multiple metrics
+            metrics = []
+            for metric in self.data_args.metric_name:
+                try:
+                    metrics.append(
+                    load(metric, experiment_id=uuid.uuid4())
+                    )
+                except:
+                    logger.error(f"Metric {metric} not found. Skipping...")
+                    continue
+
+
 
         # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
         # predictions and label_ids field) and has to return a dictionary string to float.
@@ -886,7 +902,17 @@ class FastFitTrainer:
                 else np.argmax(predictions, axis=1)
             )
             references = p.label_ids
-            return metric.compute(predictions=predictions, references=references)
+
+            results = {}
+
+            for metric in metrics:
+                if metric.name != 'accuracy':
+                    results.update(metric.compute(predictions=predictions, references=references,average='macro'))
+                else:
+                    results.update(metric.compute(predictions=predictions, references=references))
+
+            return results
+
 
         # Data collator will default to DataCollatorWithPadding when the tokenizer is passed to Trainer, so we change it if
         # we already did the padding.
@@ -966,7 +992,7 @@ class FastFitTrainer:
         if self.training_args.do_train:
             train_result = self.trainer.train(
                 resume_from_checkpoint=self.checkpoint,
-                ignore_keys_for_eval={"doc_input_ids", "doc_attention_mask", "labels"},
+                ignore_keys_for_eval=list({"doc_input_ids", "doc_attention_mask", "labels"}),
             )
             metrics = train_result.metrics
             max_train_samples = (
