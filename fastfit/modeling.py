@@ -44,7 +44,7 @@ class SupConLoss(nn.Module):
         Returns:
             A loss scalar.
         """
-        device = torch.device("cuda") if features.is_cuda else torch.device("cpu")
+        device = features.device
 
         if len(features.shape) < 3:
             raise ValueError(
@@ -256,11 +256,14 @@ class FastFitConfig(PretrainedConfig):
         self.length_norm_at_inference = length_norm_at_inference
 
         assert inference_direction in ["query", "doc", "both"]
-        assert "encoder" in kwargs, "Config has to be initialized with encoder config"
-        encoder_config = kwargs.pop("encoder")
-        encoder_model_type = encoder_config.pop("model_type")
-        self.encoder = AutoConfig.for_model(encoder_model_type, **encoder_config)
-        self.hidden_size = self.encoder.hidden_size
+        if "encoder" in kwargs:
+            encoder_config = kwargs.pop("encoder")
+            encoder_model_type = encoder_config.pop("model_type")
+            self.encoder = AutoConfig.for_model(encoder_model_type, **encoder_config)
+            self.hidden_size = self.encoder.hidden_size
+        else:
+            self.encoder = None
+            self.hidden_size = None
 
     @classmethod
     def from_encoder_config(
@@ -270,7 +273,8 @@ class FastFitConfig(PretrainedConfig):
 
     def to_dict(self):
         output = copy.deepcopy(self.__dict__)
-        output["encoder"] = self.encoder.to_dict()
+        if self.encoder is not None:
+            output["encoder"] = self.encoder.to_dict()
         output["model_type"] = self.__class__.model_type
         return output
 
@@ -544,12 +548,22 @@ class FastFitTrainable(PreTrainedModel):
 
     def forward(
         self,
-        query_input_ids,
-        query_attention_mask,
+        input_ids=None,
+        attention_mask=None,
+        query_input_ids=None,
+        query_attention_mask=None,
         doc_input_ids=None,
         doc_attention_mask=None,
         labels=None,
     ):
+        if query_input_ids is None and input_ids is not None:
+            query_input_ids = input_ids
+        if query_attention_mask is None and attention_mask is not None:
+            query_attention_mask = attention_mask
+        if labels is None:
+            scores = self.inference_forward(query_input_ids, query_attention_mask)
+            return SequenceClassifierOutput(logits=scores)
+
         scores = None
         if not self.training:
             scores = self.inference_forward(query_input_ids, query_attention_mask)
@@ -625,7 +639,7 @@ class FastFitTrainable(PreTrainedModel):
                 a, b = Q[:bs, :, :], Q[bs:, :, :]
 
         else:
-            lbls = Variable(labels.type(torch.DoubleTensor), requires_grad=True)
+            lbls = Variable(labels.type(torch.FloatTensor), requires_grad=True).to(self.device)
             if self.config.rep_tokens == "all":
                 sim_mat = self.query_doc_similarity_matrix(
                     Q, D, query_attention_mask, doc_attention_mask,
